@@ -145,8 +145,7 @@ struct teo_bin {
 struct teo_cpu {
 	s64 time_span_ns;
 	s64 sleep_length_ns;
-	struct teo_bin state_bins[CPUIDLE_STATE_MAX];
-	unsigned int total;
+	struct teo_idle_state states[CPUIDLE_STATE_MAX];
 	int interval_idx;
 	u64 intervals[INTERVALS];
 	unsigned long util_threshold;
@@ -275,7 +274,7 @@ static s64 teo_middle_of_bin(int idx, struct cpuidle_driver *drv)
  */
 static int teo_find_shallower_state(struct cpuidle_driver *drv,
 				    struct cpuidle_device *dev, int state_idx,
-				    u64 duration_ns, bool no_poll)
+				    s64 duration_ns)
 {
 	int i;
 
@@ -302,15 +301,10 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 {
 	struct teo_cpu *cpu_data = per_cpu_ptr(&teo_cpus, dev->cpu);
 	s64 latency_req = cpuidle_governor_latency_req(dev->cpu);
-	int constraint_idx = drv->state_count;
-	unsigned int hits = 0, misses = 0;
-	unsigned int early_hits = 0;
-	int prev_max_early_idx = -1;
-	int max_early_idx = -1;
-	int idx0 = -1, idx = -1;
+	int max_early_idx, prev_max_early_idx, constraint_idx, idx0, idx, i;
+	unsigned int hits, misses, early_hits;
 	ktime_t delta_tick;
 	s64 duration_ns;
-	int i;
 
 	if (dev->last_state_idx >= 0) {
 		teo_update(drv, dev);
@@ -321,6 +315,15 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 
 	duration_ns = tick_nohz_get_sleep_length(&delta_tick);
 	cpu_data->sleep_length_ns = duration_ns;
+
+	hits = 0;
+	misses = 0;
+	early_hits = 0;
+	max_early_idx = -1;
+	prev_max_early_idx = -1;
+	constraint_idx = drv->state_count;
+	idx = -1;
+	idx0 = idx;
 
 	for (i = 0; i < drv->state_count; i++) {
 		struct cpuidle_state *s = &drv->states[i];
@@ -337,6 +340,8 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 
 		if (idx < 0) {
 			idx = i; /* first enabled state */
+			hits = cpu_data->states[i].hits;
+			misses = cpu_data->states[i].misses;
 			idx0 = i;
 		}
 
@@ -418,11 +423,18 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	if (idx > constraint_idx)
 		idx = constraint_idx;
 
-	if (idx > idx0) {
+	if (idx < 0) {
+		idx = 0; /* No states enabled. Must use 0. */
+	} else if (idx > idx0) {
 		unsigned int count = 0;
 		u64 sum = 0;
 
 		/*
+		 * The target residencies of at least two different enabled idle
+		 * states are less than or equal to the current expected idle
+		 * duration.  Try to refine the selection using the most recent
+		 * measured idle duration values.
+		 *
 		 * Count and sum the most recent idle duration values less than
 		 * the current expected idle duration value.
 		 */
@@ -494,9 +506,9 @@ end:
 		 * till the closest timer including the tick, try to correct
 		 * that.
 		 */
-		if (idx > 0 && drv->states[idx].target_residency_ns > delta_tick)
-			idx = teo_find_shallower_state(drv, dev, idx, delta_tick,
-						       false);
+		if (idx > idx0 &&
+		    drv->states[idx].target_residency_ns > delta_tick)
+			idx = teo_find_shallower_state(drv, dev, idx, delta_tick);
 	}
 
 	return idx;
