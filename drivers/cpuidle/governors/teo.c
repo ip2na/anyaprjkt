@@ -290,13 +290,15 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 {
 	struct teo_cpu *cpu_data = per_cpu_ptr(&teo_cpus, dev->cpu);
 	s64 latency_req = cpuidle_governor_latency_req(dev->cpu);
-	unsigned int idx_intercept_sum = 0;
-	unsigned int intercept_sum = 0;
-	unsigned int idx_hit_sum = 0;
-	unsigned int hit_sum = 0;
-	int constraint_idx = 0;
-	int idx0 = 0, idx = -1;
+	int constraint_idx = drv->state_count;
+	unsigned int hits = 0, misses = 0;
+	unsigned int early_hits = 0;
+	int prev_max_early_idx = -1;
+	int max_early_idx = -1;
+	int idx0 = -1, idx = -1;
 	ktime_t delta_tick;
+	s64 duration_ns;
+	int i;
 
 	if (dev->last_state_idx >= 0) {
 		teo_update(drv, dev);
@@ -308,26 +310,7 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	duration_ns = tick_nohz_get_sleep_length(&delta_tick);
 	cpu_data->sleep_length_ns = duration_ns;
 
-	/* Check if there is any choice in the first place. */
-	if (drv->state_count < 2) {
-		idx = 0;;
-		goto end;
-	}
-	if (!dev->states_usage[0].disable) {
-		idx = 0;
-		if (drv->states[1].target_residency_ns > duration_ns)
-			goto end;
-	}
-
-	/*
-	 * Find the deepest idle state whose target residency does not exceed
-	 * the current sleep length and the deepest idle state not deeper than
-	 * the former whose exit latency does not exceed the current latency
-	 * constraint.  Compute the sums of metrics for early wakeup pattern
-	 * detection.
-	 */
-	for (i = 1; i < drv->state_count; i++) {
-		struct teo_bin *prev_bin = &cpu_data->state_bins[i-1];
+	for (i = 0; i < drv->state_count; i++) {
 		struct cpuidle_state *s = &drv->states[i];
 
 		/*
