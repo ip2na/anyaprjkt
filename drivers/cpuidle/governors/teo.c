@@ -328,14 +328,16 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	duration_ns = tick_nohz_get_sleep_length(&delta_tick);
 	cpu_data->sleep_length_ns = duration_ns;
 
-	hits = 0;
-	misses = 0;
-	early_hits = 0;
-	max_early_idx = -1;
-	prev_max_early_idx = -1;
-	constraint_idx = drv->state_count;
-	idx = -1;
-	idx0 = idx;
+	/* Check if there is any choice in the first place. */
+	if (drv->state_count < 2) {
+		idx = 0;
+		goto end;
+	}
+	if (!dev->states_usage[0].disable) {
+		idx = 0;
+		if (drv->states[1].target_residency_ns > duration_ns)
+			goto end;
+	}
 
 	for (i = 0; i < drv->state_count; i++) {
 		struct cpuidle_state *s = &drv->states[i];
