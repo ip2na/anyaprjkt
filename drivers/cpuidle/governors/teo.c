@@ -336,11 +336,87 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 		hits = cpu_data->states[i].hits;
 		misses = cpu_data->states[i].misses;
 
-		if (early_hits < cpu_data->states[i].early_hits &&
-		    teo_time_ok(drv->states[i].target_residency_ns)) {
-			prev_max_early_idx = max_early_idx;
-			early_hits = cpu_data->states[i].early_hits;
-			max_early_idx = i;
+	/* Avoid unnecessary overhead. */
+	if (idx < 0) {
+		idx = 0; /* No states enabled, must use 0. */
+		goto end;
+	} else if (idx == idx0) {
+		goto end;
+	}
+
+	/*
+	 * If the sum of the intercepts metric for all of the idle states
+	 * shallower than the current candidate one (idx) is greater than the
+	 * sum of the intercepts and hits metrics for the candidate state and
+	 * all of the deeper states, or the sum of the numbers of recent
+	 * intercepts over all of the states shallower than the candidate one
+	 * is greater than a half of the number of recent events taken into
+	 * account, the CPU is likely to wake up early, so find an alternative
+	 * idle state to select.
+	 */
+	alt_intercepts = 2 * idx_intercept_sum > cpu_data->total - idx_hit_sum;
+	alt_recent = idx_recent_sum > NR_RECENT / 2;
+	if (alt_recent || alt_intercepts) {
+		s64 first_suitable_span_ns = duration_ns;
+		int first_suitable_idx = idx;
+
+		/*
+		 * Look for the deepest idle state whose target residency had
+		 * not exceeded the idle duration in over a half of the relevant
+		 * cases (both with respect to intercepts overall and with
+		 * respect to the recent intercepts only) in the past.
+		 *
+		 * Take the possible latency constraint and duration limitation
+		 * present if the tick has been stopped already into account.
+		 */
+		intercept_sum = 0;
+		recent_sum = 0;
+
+		for (i = idx - 1; i >= 0; i--) {
+			struct teo_bin *bin = &cpu_data->state_bins[i];
+			s64 span_ns;
+
+			intercept_sum += bin->intercepts;
+			recent_sum += bin->recent;
+
+			span_ns = teo_middle_of_bin(i, drv);
+
+			if ((!alt_recent || 2 * recent_sum > idx_recent_sum) &&
+			    (!alt_intercepts ||
+			     2 * intercept_sum > idx_intercept_sum)) {
+				if (teo_time_ok(span_ns) &&
+				    !dev->states_usage[i].disable) {
+					idx = i;
+					duration_ns = span_ns;
+				} else {
+					/*
+					 * The current state is too shallow or
+					 * disabled, so take the first enabled
+					 * deeper state with suitable time span.
+					 */
+					idx = first_suitable_idx;
+					duration_ns = first_suitable_span_ns;
+				}
+				break;
+			}
+
+			if (dev->states_usage[i].disable)
+				continue;
+
+			if (!teo_time_ok(span_ns)) {
+				/*
+				 * The current state is too shallow, but if an
+				 * alternative candidate state has been found,
+				 * it may still turn out to be a better choice.
+				 */
+				if (first_suitable_idx != idx)
+					continue;
+
+				break;
+			}
+
+			first_suitable_span_ns = span_ns;
+			first_suitable_idx = i;
 		}
 	}
 
