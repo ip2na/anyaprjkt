@@ -348,6 +348,7 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	int idx0 = 0, idx = -1;
 	bool alt_intercepts, alt_recent;
 	ktime_t delta_tick;
+	bool cpu_utilized;
 	s64 duration_ns;
 
 	if (dev->last_state_idx >= 0) {
@@ -372,12 +373,12 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 			goto out_tick;
 	}
 
-	cpu_data->utilized = teo_cpu_is_utilized(dev->cpu, cpu_data);
+	cpu_utilized = teo_cpu_is_utilized(dev->cpu, cpu_data);
 	/*
 	 * The cpu is being utilized over the threshold there are only 2 states to choose from.
 	 * No need to consider metrics, choose the shallowest non-polling state and exit.
 	 */
-	if (drv->state_count < 3 && cpu_data->utilized) {
+	if (drv->state_count < 3 && cpu_utilized) {
 		/* The CPU is utilized, so assume a short idle duration. */
 		duration_ns = teo_middle_of_bin(0, drv);
 		/*
@@ -548,7 +549,7 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	 * been stopped already and the shallower state's target residency is
 	 * not sufficiently large.
 	 */
-	if (cpu_data->utilized) {
+	if (cpu_utilized) {
 		s64 span_ns;
 
 		/*
