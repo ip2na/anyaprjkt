@@ -373,7 +373,40 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 			goto end;
 	}
 
-	for (i = 0; i < drv->state_count; i++) {
+	cpu_data->utilized = teo_cpu_is_utilized(dev->cpu, cpu_data);
+	/*
+	 * The cpu is being utilized over the threshold there are only 2 states to choose from.
+	 * No need to consider metrics, choose the shallowest non-polling state and exit.
+	 */
+	if (drv->state_count < 3 && cpu_data->utilized) {
+		/* The CPU is utilized, so assume a short idle duration. */
+		duration_ns = teo_middle_of_bin(0, drv);
+		/*
+		 * If state 0 is enabled and it is not a polling one, select it
+		 * right away unless the scheduler tick has been stopped, in
+		 * which case care needs to be taken to leave the CPU in a deep
+		 * enough state in case it is not woken up any time soon after
+		 * all.  If state 1 is disabled, though, state 0 must be used
+		 * anyway.
+		 */
+		if ((!idx && !(drv->states[0].flags & CPUIDLE_FLAG_POLLING) &&
+		    teo_time_ok(duration_ns)) || dev->states_usage[1].disable)
+			idx = 0;
+		else /* Assume that state 1 is not a polling one and use it. */
+			idx = 1;
+
+		goto end;
+	}
+
+	/*
+	 * Find the deepest idle state whose target residency does not exceed
+	 * the current sleep length and the deepest idle state not deeper than
+	 * the former whose exit latency does not exceed the current latency
+	 * constraint.  Compute the sums of metrics for early wakeup pattern
+	 * detection.
+	 */
+	for (i = 1; i < drv->state_count; i++) {
+		struct teo_bin *prev_bin = &cpu_data->state_bins[i-1];
 		struct cpuidle_state *s = &drv->states[i];
 
 		/*
@@ -508,49 +541,16 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	 * been stopped already and the shallower state's target residency is
 	 * not sufficiently large.
 	 */
-	if (cpu_utilized) {
-		i = teo_find_shallower_state(drv, dev, idx, KTIME_MAX, true);
-		if (teo_state_ok(i, drv))
+	if (cpu_data->utilized) {
+		s64 span_ns;
+
+		i = teo_find_shallower_state(drv, dev, idx, duration_ns, true);
+		span_ns = teo_middle_of_bin(i, drv);
+		if (teo_time_ok(span_ns)) {
 			idx = i;
+			duration_ns = span_ns;
+		}
 	}
-
-	/*
-	 * Skip the timers check if state 0 is the current candidate one,
-	 * because an immediate non-timer wakeup is expected in that case.
-	 */
-	if (!idx)
-		goto out_tick;
-
-	/*
-	 * If state 0 is a polling one, check if the target residency of
-	 * the current candidate state is low enough and skip the timers
-	 * check in that case too.
-	 */
-	if ((drv->states[0].flags & CPUIDLE_FLAG_POLLING) &&
-	    drv->states[idx].target_residency_ns < RESIDENCY_THRESHOLD_NS)
-		goto out_tick;
-
-	duration_ns = tick_nohz_get_sleep_length(&delta_tick);
-	cpu_data->sleep_length_ns = duration_ns;
-
-	/*
-	 * If the closest expected timer is before the terget residency of the
-	 * candidate state, a shallower one needs to be found.
-	 */
-	if (drv->states[idx].target_residency_ns > duration_ns) {
-		i = teo_find_shallower_state(drv, dev, idx, duration_ns, false);
-		if (teo_state_ok(i, drv))
-			idx = i;
-	}
-
-	/*
-	 * If the selected state's target residency is below the tick length
-	 * and intercepts occurring before the tick length are the majority of
-	 * total wakeup events, do not stop the tick.
-	 */
-	if (drv->states[idx].target_residency_ns < TICK_NSEC &&
-	    tick_intercept_sum > cpu_data->total / 2 + cpu_data->total / 8)
-		duration_ns = TICK_NSEC / 2;
 
 end:
 	/*
