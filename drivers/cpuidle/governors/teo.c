@@ -134,6 +134,12 @@
  */
 #define NR_RECENT	9
 
+/*
+ * Idle state target residency threshold used for deciding whether or not to
+ * check the time till the closest expected timer event.
+ */
+#define RESIDENCY_THRESHOLD_NS	(15 * NSEC_PER_USEC)
+
 /**
  * struct teo_bin - Metrics used by the TEO cpuidle governor.
  * @intercepts: The "intercepts" metric.
@@ -463,6 +469,47 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	 */
 	if (idx > constraint_idx)
 		idx = constraint_idx;
+
+	/*
+	 * If the CPU is being utilized over the threshold, choose a shallower
+	 * non-polling state to improve latency, unless the scheduler tick has
+	 * been stopped already and the shallower state's target residency is
+	 * not sufficiently large.
+	 */
+	if (cpu_utilized) {
+		i = teo_find_shallower_state(drv, dev, idx, KTIME_MAX, true);
+		if (teo_state_ok(i, drv))
+			idx = i;
+	}
+
+	/*
+	 * Skip the timers check if state 0 is the current candidate one,
+	 * because an immediate non-timer wakeup is expected in that case.
+	 */
+	if (!idx)
+		goto out_tick;
+
+	/*
+	 * If state 0 is a polling one, check if the target residency of
+	 * the current candidate state is low enough and skip the timers
+	 * check in that case too.
+	 */
+	if ((drv->states[0].flags & CPUIDLE_FLAG_POLLING) &&
+	    drv->states[idx].target_residency_ns < RESIDENCY_THRESHOLD_NS)
+		goto out_tick;
+
+	duration_ns = tick_nohz_get_sleep_length(&delta_tick);
+	cpu_data->sleep_length_ns = duration_ns;
+
+	/*
+	 * If the closest expected timer is before the terget residency of the
+	 * candidate state, a shallower one needs to be found.
+	 */
+	if (drv->states[idx].target_residency_ns > duration_ns) {
+		i = teo_find_shallower_state(drv, dev, idx, duration_ns, false);
+		if (teo_state_ok(i, drv))
+			idx = i;
+	}
 
 end:
 	/*
