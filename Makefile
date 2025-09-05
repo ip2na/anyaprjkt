@@ -780,6 +780,37 @@ else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS += -Os
 endif
 
+ifdef CONFIG_LLVM_POLLY
+# Detect if clang -v output contains "ClangBuiltLinux"
+SLIM_CLANG=$(shell clang -v 2>&1 | grep -o "ClangBuiltLinux")
+
+ifeq ($(SLIM_CLANG),)
+KBUILD_CFLAGS  += -mllvm -polly \
+     -mllvm -polly-run-inliner \
+     -mllvm -polly-ast-use-context \
+     -mllvm -polly-detect-keep-going \
+     -mllvm -polly-invariant-load-hoisting \
+     -mllvm -polly-vectorizer=stripmine
+
+KBUILD_CFLAGS  += -mllvm -polly-loopfusion-greedy=1 \
+     -mllvm -polly-reschedule=1 \
+     -mllvm -polly-postopts=1 \
+     -mllvm -polly-num-threads=0 \
+     -mllvm -polly-omp-backend=LLVM \
+     -mllvm -polly-scheduling=dynamic \
+     -mllvm -polly-scheduling-chunksize=1
+
+# Polly may optimise loops with dead paths beyound what the linker
+# can understand. This may negate the effect of the linker's DCE
+# so we tell Polly to perfom proven DCE on the loops it optimises
+# in order to preserve the overall effect of the linker's DCE.
+ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
+POLLY_FLAGS    += -mllvm -polly-run-dce
+endif
+
+endif
+endif
+
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
 KBUILD_CFLAGS	+= $(call cc-option,-fno-allow-store-data-races)
@@ -806,6 +837,20 @@ KBUILD_CFLAGS += $(stackp-flags-y)
 
 KBUILD_CFLAGS-$(CONFIG_WERROR) += -Werror
 KBUILD_CFLAGS += $(KBUILD_CFLAGS-y)
+
+KBUILD_CFLAGS-$(CONFIG_WERROR) += -Werror
+KBUILD_CFLAGS += $(KBUILD_CFLAGS-y)
+
+ifeq ($(call cc-option-yn, -mllvm -regalloc-enable-advisor=release),y)
+# Enable MLGO optimizations for register allocation
+KBUILD_CFLAGS   += -mllvm -regalloc-enable-advisor=release
+KBUILD_LDFLAGS  += -mllvm -regalloc-enable-advisor=release
+KBUILD_LDFLAGS  += -mllvm -enable-ml-inliner=release
+$(info --- MLGO Optimizations Activated!)
+endif
+
+# Enable hot cold split optimization
+KBUILD_CFLAGS   += -mllvm -hot-cold-split=true
 
 ifdef CONFIG_CC_IS_CLANG
 KBUILD_CPPFLAGS += -Qunused-arguments
