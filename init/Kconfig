@@ -1352,10 +1352,11 @@ config CC_OPTIMIZE_FOR_PERFORMANCE
 	  helpful compile-time warnings.
 
 config CC_OPTIMIZE_FOR_PERFORMANCE_O3
-         bool "Optimize for performance (-O3)"
-         default y
-         help
-           Enable aggressive optimizations for better performance at the cost of increased binary size.
+        bool "Optimize more for performance (-O3)"
+	depends on ARC
+	help
+	  Choosing this option will pass "-O3" to your compiler to optimize
+	  the kernel yet more for performance.
      
 config CC_OPTIMIZE_FOR_SIZE
 	bool "Optimize for size (-Os)"
