@@ -5,7 +5,6 @@
  * Copyright (C) 2009/2010 Stefani Seibold <stefani@seibold.net>
  */
 
-
 #ifndef __GENKSYMS__
 #include <linux/err.h>
 #include <linux/export.h>
