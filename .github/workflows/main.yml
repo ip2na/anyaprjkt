@@ -1,0 +1,71 @@
+name: Anya
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Kernel
+      uses: actions/checkout@v4
+      with:
+        repository: android12-5.10/lts
+        ref: aosp-19
+        submodules: recursive
+
+    - name: Build Kernel
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential libncurses-dev bison flex \
+          libssl-dev libelf-dev bc zip \
+          gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+          python3 python-is-python3 git wget curl
+
+        # ===== CLANG AOSP r536225 =====
+        mkdir clang
+        wget -qO- \
+          https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r536225.tar.gz \
+          | tar -xz -C clang
+        export PATH=$PWD/clang/bin:$PATH
+
+        # ===== KernelSU Next (susfs) =====
+        curl -LSs \
+          https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh \
+          | bash -s dev-susfs
+
+        # ===== SUSFS =====
+        git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 .susfs
+        cp -R .susfs/kernel_patches/fs/* fs
+        cp -R .susfs/kernel_patches/include/* include
+        patch -p1 < .susfs/kernel_patches/*.patch
+
+        # ===== BUILD (THIN LTO) =====
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 LTO=thin O=out \
+          CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+
+        make ARCH=arm64 LLVM=1 LLVM_IAS=1 LTO=thin O=out \
+          CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image
+
+        # ===== ANYKERNEL3 =====
+        git clone --depth=1 -b gki-2.0 https://github.com/ip2na/Anykernel3.git AnyKernel3
+        cp out/arch/arm64/boot/Image AnyKernel3/
+
+        cd AnyKernel3
+        zip -r9 ../Alexandra-GKI.zip * -x .git README.md
+        cd ..
+
+    - name: Send to Telegram
+      if: always()
+      run: |
+        BOT_TOKEN="7583269251:AAFkf5_dauMo2Hzl_KAuJN5fWrtI4pf7L3k"
+        CHAT_ID="7583269251"
+
+        if [ -f AnyaKSU.zip ]; then
+          curl -s -F document=@"Alexandra-GKI.zip" \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+            -F chat_id="${CHAT_ID}" \
+            -F caption="Anyakernel GKI ✅"
+        fi
