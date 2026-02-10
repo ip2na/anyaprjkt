@@ -841,7 +841,10 @@ KBUILD_CFLAGS += $(KBUILD_CFLAGS-y)
 
 ifdef CONFIG_CC_IS_CLANG
 # Enable hot cold split optimization
-KBUILD_CFLAGS   += -mllvm -hot-cold-split=true
+ifeq ($(call cc-option-yn, -mllvm -hot-cold-split=true),y)
+KBUILD_CFLAGS += -mllvm -hot-cold-split=true
+endif
+
 # Register allocation optimizations
 ifeq ($(call cc-option-yn, -mllvm -regalloc-enable-advisor=release),y)
 KBUILD_CFLAGS   += -mllvm -regalloc-enable-advisor=release
