@@ -842,23 +842,21 @@ KBUILD_CFLAGS += $(KBUILD_CFLAGS-y)
 ifdef CONFIG_CC_IS_CLANG
 # Enable hot cold split optimization
 KBUILD_CFLAGS   += -mllvm -hot-cold-split=true
-
-ifeq ($(call cc-option-yn, -mllvm -regalloc-enable-advisor=release),y)
-# Enable MLGO optimizations for register allocation
+# Register allocation optimizations
+ifeq ($(call cc-option-yn, -mllvm -regalloc-enable-advisor=release),>
 KBUILD_CFLAGS   += -mllvm -regalloc-enable-advisor=release
 KBUILD_LDFLAGS  += -mllvm -regalloc-enable-advisor=release
+$(info [MLGO] Register allocation enabled)
 endif
-
-# Enable MLGO optimizations for inliner
-ifeq ($(call cc-option-yn, -ml-inliner-model-selector=arm64-mixed),y)
+# Inliner optimizations
+ifeq ($(call cc-option-yn, -mllvm -ml-inliner-model-selector=arm64-m>
 KBUILD_CFLAGS  += -mllvm -enable-ml-inliner=release
 KBUILD_LDFLAGS += -mllvm -enable-ml-inliner=release
-
 KBUILD_CFLAGS  += -mllvm -ml-inliner-model-selector=arm64-mixed
 KBUILD_LDFLAGS += -mllvm -ml-inliner-model-selector=arm64-mixed
-
 KBUILD_CFLAGS  += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
 KBUILD_LDFLAGS += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
+$(info [MLGO] Inliner optimizations enabled - $(shell date +"%Y-%m-%>
 endif
 endif
 
