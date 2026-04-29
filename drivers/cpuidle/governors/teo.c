@@ -405,6 +405,7 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	bool alt_intercepts, alt_recent;
 	bool cpu_utilized;
 	s64 duration_ns;
+	int i;
 
 	if (dev->last_state_idx >= 0) {
 		teo_update(drv, dev);
