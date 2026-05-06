@@ -12,6 +12,8 @@
 #include <linux/err.h>
 #include <linux/log2.h>
 #include <linux/uaccess.h>
+#include <linux/scatterlist.h>
+#include <linux/mm.h>
 #else
 #include <linux/kernel.h>
 #include <linux/export.h>
@@ -19,6 +21,8 @@
 #include <linux/err.h>
 #include <linux/log2.h>
 #include <linux/uaccess.h>
+#include <linux/scatterlist.h>
+#include <linux/mm.h>
 #include <linux/kfifo.h>
 #endif
 
