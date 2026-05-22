@@ -207,7 +207,7 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 			 * candidates.
 			 */
 			if (!has_idle &&
-			    uc_min <= arch_scale_min_freq_capacity(cpu) &&
+			    (uc_min == 0 || uc_min <= curr->cap_max) &&
 			    !cass_prime_cpu(curr)) {
 				/* Discard any previous non-idle candidate */
 				best = curr;
