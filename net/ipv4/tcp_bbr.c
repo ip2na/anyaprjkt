@@ -1388,6 +1388,7 @@ static void bbr_update_latest_delivery_signals(
 static void bbr_advance_latest_delivery_signals(
 	struct sock *sk, const struct rate_sample *rs, struct bbr_context *ctx)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct bbr *bbr = bbr_priv(sk);
 
 	/* If ACK matches a TLP retransmit, persist the filter. If we detect
@@ -1587,6 +1588,7 @@ static bool bbr_adapt_upper_bounds(struct sock *sk,
 				    const struct rate_sample *rs,
 				    struct bbr_context *ctx)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct bbr *bbr = bbr_priv(sk);
 
 	/* Track when we'll see bw/loss samples resulting from our bw probes. */
@@ -1821,6 +1823,7 @@ static void bbr_exit_probe_rtt(struct sock *sk)
 static void bbr_check_loss_too_high_in_startup(struct sock *sk,
 						const struct rate_sample *rs)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct bbr *bbr = bbr_priv(sk);
 
 	if (bbr_full_bw_reached(sk))
@@ -2091,7 +2094,7 @@ static void bbr_init(struct sock *sk)
 	/* fast_ack_mode removed: KMI-safe version */
 
 	if (bbr_can_use_ecn(sk))
-		/* TCP_ECN_ECT_PERMANENT not available in 5.10 KMI-safe version */
+		;  /* TCP_ECN_ECT_PERMANENT not available in 5.10 */
 }
 
 /* BBR marks the current round trip as a loss round. */
