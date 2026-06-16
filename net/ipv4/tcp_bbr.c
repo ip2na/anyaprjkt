@@ -178,8 +178,9 @@ struct bbr_context {
 	u32 sample_bw;
 };
 
-/* Access BBRv3 state from socket (KMI-safe: stored in tcp_sock KABI_RESERVE) */
-#define bbr_priv(sk) ((struct bbr *)(tcp_sk(sk)->bbr_v3_state))
+/* Access BBRv3 state from socket (KMI-safe: pointer stored in icsk_ca_priv,
+ * no struct layout changes needed) */
+#define bbr_priv(sk) (*(struct bbr **)inet_csk_ca(sk))
 
 
 /* Window length of min_rtt filter (in sec): */
@@ -2018,7 +2019,7 @@ static void bbr_init(struct sock *sk)
 		bbr = kzalloc(sizeof(*bbr), GFP_KERNEL);
 		if (!bbr)
 			return;
-		tp->bbr_v3_state = bbr;
+		bbr_priv(sk) = bbr;
 	}
 	bbr->initialized = 1;
 
@@ -2154,8 +2155,10 @@ static void bbr_release(struct sock *sk)
 {
 	struct bbr *bbr = bbr_priv(sk);
 
-	if (bbr)
+	if (bbr) {
 		kfree(bbr);
+		bbr_priv(sk) = NULL;
+	}
 }
 
 static u32 bbr_ssthresh(struct sock *sk)
