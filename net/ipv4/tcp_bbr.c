@@ -510,7 +510,7 @@ static u32 bbr_tso_segs(struct sock *sk, unsigned int mss_now)
 	struct bbr *bbr = bbr_priv(sk);
 
 	if (unlikely(!bbr || !bbr->initialized))
-		return tcp_tso_autosize(sk, mss_now);
+		return sock_net(sk)->ipv4.sysctl_tcp_min_tso_segs;
 
 	return bbr_tso_segs_generic(sk, mss_now, sk->sk_gso_max_size);
 }
@@ -522,7 +522,7 @@ static u32 bbr_tso_segs_goal(struct sock *sk)
 	struct bbr *bbr = bbr_priv(sk);
 
 	if (unlikely(!bbr || !bbr->initialized))
-		return tcp_tso_autosize(sk, tp->mss_cache);
+		return sock_net(sk)->ipv4.sysctl_tcp_min_tso_segs;
 
 	return  bbr_tso_segs_generic(sk, tp->mss_cache, GSO_MAX_SIZE);
 }
