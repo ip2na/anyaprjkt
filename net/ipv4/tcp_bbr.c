@@ -507,6 +507,11 @@ static u32 bbr_tso_segs_generic(struct sock *sk, unsigned int mss_now,
 /* Custom tcp_tso_autosize() for BBR, used at transmit time to cap skb size. */
 static u32 bbr_tso_segs(struct sock *sk, unsigned int mss_now)
 {
+	struct bbr *bbr = bbr_priv(sk);
+
+	if (unlikely(!bbr || !bbr->initialized))
+		return tcp_tso_autosize(sk, mss_now);
+
 	return bbr_tso_segs_generic(sk, mss_now, sk->sk_gso_max_size);
 }
 
@@ -514,6 +519,10 @@ static u32 bbr_tso_segs(struct sock *sk, unsigned int mss_now)
 static u32 bbr_tso_segs_goal(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct bbr *bbr = bbr_priv(sk);
+
+	if (unlikely(!bbr || !bbr->initialized))
+		return tcp_tso_autosize(sk, tp->mss_cache);
 
 	return  bbr_tso_segs_generic(sk, tp->mss_cache, GSO_MAX_SIZE);
 }
@@ -534,6 +543,9 @@ static void bbr_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct bbr *bbr = bbr_priv(sk);
+
+	if (unlikely(!bbr || !bbr->initialized))
+		return;
 
 	if (event == CA_EVENT_TX_START) {
 		if (!tp->app_limited)
@@ -2149,6 +2161,9 @@ static u32 bbr_undo_cwnd(struct sock *sk)
 {
 	struct bbr *bbr = bbr_priv(sk);
 
+	if (unlikely(!bbr || !bbr->initialized))
+		return tcp_sk(sk)->prior_cwnd;
+
 	bbr_reset_full_bw(sk); /* spurious slow-down; reset full bw detector */
 	bbr->loss_in_round = 0;
 
@@ -2175,6 +2190,12 @@ static u32 bbr_ssthresh(struct sock *sk)
 {
 	struct bbr *bbr = bbr_priv(sk);
 
+	/* Guard: bbr_priv(sk) may be NULL if this callback fires during
+	 * a CC switch (release clears the pointer before init re-allocates).
+	 */
+	if (unlikely(!bbr || !bbr->initialized))
+		return tcp_sk(sk)->snd_ssthresh;
+
 	bbr_save_cwnd(sk);
 	/* For undo, save state that adapts based on loss signal. */
 	bbr->undo_bw_lo		= bbr->bw_lo;
@@ -2191,6 +2212,9 @@ static size_t bbr_get_info(struct sock *sk, u32 ext, int *attr,
 	if (ext & (1 << (INET_DIAG_BBRINFO - 1)) ||
 	    ext & (1 << (INET_DIAG_VEGASINFO - 1))) {
 		struct bbr *bbr = bbr_priv(sk);
+
+		if (unlikely(!bbr || !bbr->initialized))
+			return 0;
 		u64 bw = bbr_bw_bytes_per_sec(sk, bbr_bw(sk));
 		u64 bw_hi = bbr_bw_bytes_per_sec(sk, bbr_max_bw(sk));
 		u64 bw_lo = bbr->bw_lo == ~0U ?
@@ -2217,6 +2241,9 @@ static void bbr_set_state(struct sock *sk, u8 new_state)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct bbr *bbr = bbr_priv(sk);
+
+	if (unlikely(!bbr || !bbr->initialized))
+		return;
 
 	if (new_state == TCP_CA_Loss) {
 
