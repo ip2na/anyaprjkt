@@ -1978,6 +1978,13 @@ static void bbr_main(struct sock *sk, u32 ack, int flag,
 	u32 bw, round_delivered;
 	int ce_ratio = -1;
 
+	/* Safety: bbr_priv(sk) may be uninitialized if called via
+	 * tcp_rcv_synsent_state_process() -> tcp_ack() -> cong_control()
+	 * before bbr_init() has completed, or if kzalloc() failed.
+	 */
+	if (unlikely(!bbr || !bbr->initialized))
+		return;
+
 	round_delivered = bbr_update_round_start(sk, rs, &ctx);
 	if (bbr->round_start) {
 		bbr->rounds_since_probe =
@@ -2013,14 +2020,17 @@ out:
 static void bbr_init(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct bbr *bbr = bbr_priv(sk);
+	struct bbr *bbr;
 
-	if (!bbr) {
-		bbr = kzalloc(sizeof(*bbr), GFP_KERNEL);
-		if (!bbr)
-			return;
-		bbr_priv(sk) = bbr;
-	}
+	/* icsk_ca_priv is NOT zero-initialized on socket allocation (slab
+	 * cache reuses memory). Always allocate fresh to avoid interpreting
+	 * garbage as a valid struct bbr pointer. bbr_release() frees and
+	 * clears the pointer before re-init on CC switch, so no leak.
+	 */
+	bbr = kzalloc(sizeof(*bbr), GFP_KERNEL);
+	if (!bbr)
+		return;
+	bbr_priv(sk) = bbr;
 	bbr->initialized = 1;
 
 	bbr->init_cwnd = min(0x7FU, tp->snd_cwnd);
