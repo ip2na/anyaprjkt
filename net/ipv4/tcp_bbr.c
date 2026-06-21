@@ -2212,14 +2212,16 @@ static size_t bbr_get_info(struct sock *sk, u32 ext, int *attr,
 	if (ext & (1 << (INET_DIAG_BBRINFO - 1)) ||
 	    ext & (1 << (INET_DIAG_VEGASINFO - 1))) {
 		struct bbr *bbr = bbr_priv(sk);
+		u64 bw, bw_hi, bw_lo;
+		struct tcp_bbr_info *bbr_info;
 
 		if (unlikely(!bbr || !bbr->initialized))
 			return 0;
-		u64 bw = bbr_bw_bytes_per_sec(sk, bbr_bw(sk));
-		u64 bw_hi = bbr_bw_bytes_per_sec(sk, bbr_max_bw(sk));
-		u64 bw_lo = bbr->bw_lo == ~0U ?
+		bw = bbr_bw_bytes_per_sec(sk, bbr_bw(sk));
+		bw_hi = bbr_bw_bytes_per_sec(sk, bbr_max_bw(sk));
+		bw_lo = bbr->bw_lo == ~0U ?
 			~0ULL : bbr_bw_bytes_per_sec(sk, bbr->bw_lo);
-		struct tcp_bbr_info *bbr_info = &info->bbr;
+		bbr_info = &info->bbr;
 
 		memset(bbr_info, 0, sizeof(*bbr_info));
 		bbr_info->bbr_bw_lo		= (u32)bw;
